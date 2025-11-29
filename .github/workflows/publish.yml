@@ -1,4 +1,4 @@
-name: Publish to NPM
+name: Publish Package
 
 on:
   push:
@@ -11,6 +11,7 @@ jobs:
 
     permissions:
       contents: read
+      packages: write
       id-token: write
 
     steps:
@@ -21,16 +22,52 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '20'
-          registry-url: 'https://registry.npmjs.org'
           cache: 'npm'
 
       - name: Install dependencies
         run: npm ci
 
+      - name: Run tests
+        run: npm run test:run
+
       - name: Build
         run: npm run build
 
+      # Publish to NPM (if NPM_TOKEN is configured)
+      - name: Check NPM Token
+        id: check-npm-token
+        run: |
+          if [ -z "${{ secrets.NPM_TOKEN }}" ]; then
+            echo "npm_token_exists=false" >> $GITHUB_OUTPUT
+            echo "⚠️  NPM_TOKEN is not configured. Skipping NPM publish."
+            echo "To publish to NPM, add NPM_TOKEN to repository secrets."
+          else
+            echo "npm_token_exists=true" >> $GITHUB_OUTPUT
+            echo "✅ NPM_TOKEN is configured. Will publish to NPM."
+          fi
+
+      - name: Setup Node.js for NPM
+        if: steps.check-npm-token.outputs.npm_token_exists == 'true'
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          registry-url: 'https://registry.npmjs.org'
+
       - name: Publish to NPM
+        if: steps.check-npm-token.outputs.npm_token_exists == 'true'
         run: npm publish --provenance --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      # Always publish to GitHub Packages
+      - name: Setup Node.js for GitHub Packages
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          registry-url: 'https://npm.pkg.github.com'
+          scope: '@choigawoon'
+
+      - name: Publish to GitHub Packages
+        run: npm publish
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
